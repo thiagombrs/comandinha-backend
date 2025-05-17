@@ -6,7 +6,7 @@ astroid==2.8.0
 autopep8==1.5.4
 click==7.1.2
 ecdsa==0.19.0
-fastapi==0.100.0
+fastapi[standard]>=0.113.0,<0.114.0
 h11==0.11.0
 httptools==0.6.1
 idna==3.4
@@ -23,7 +23,7 @@ platformdirs==2.4.0
 psycopg2-binary==2.9.7
 pyasn1==0.6.0
 pycodestyle==2.6.0
-pydantic==2.11.0
+pydantic>=2.7.0,<3.0.0
 pydantic_core==2.6.3
 pylint==2.11.1
 pymongo==3.12.0
