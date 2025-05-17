@@ -34,8 +34,8 @@ class CategoriaRepositorio:
         )
         return self.db.scalars(stmt).first()
 
-    def excluir(self, categoria_id: int) -> bool:
-        categoria = self.db.get(Categoria, categoria_id)
+    def remover(self, id: int) -> bool:
+        categoria = self.db.get(Categoria, id)
         if not categoria:
             return False
         self.db.delete(categoria)

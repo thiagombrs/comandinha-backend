@@ -23,7 +23,7 @@ class CategoriaSimples(BaseModel):
         from_attributes = True
         allow_population_by_field_name = True
 
-# Alias de leitura para manter compatibilidade com rotas
+
 class CategoriaRead(CategoriaSimples):
     """Esquema de leitura de categoria idêntico a CategoriaSimples."""
     pass
