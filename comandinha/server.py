@@ -10,7 +10,7 @@ from src.routers.rotas_mesas import router as mesas_router
 from src.routers.rotas_categorias import router as categorias_router
 from src.routers.rotas_produtos import router as produtos_router
 from src.routers.rotas_pedidos import router as pedidos_router
-#from src.routers.rotas_chamados import router as chamados_router  # opcional
+# from src.routers.rotas_chamados import router as chamados_router  # opcional
 
 app = FastAPI(
     title="API Comandinha",
@@ -18,11 +18,12 @@ app = FastAPI(
     version="1.0.0"
 )
 
-# CORS
+# CORS — permitir apenas os domínios especificados
 origins = [
-    "http://localhost",
-    "http://localhost:8080",
+    "http://localhost:3000",
+    "https://barao-comandinha.vercel.app"
 ]
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=origins,
@@ -30,9 +31,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-# (Removido o handler de ResponseValidationError que não existe na versão nova)
-# Se quiser tratar erros de validação de resposta, usar o handler padrão do FastAPI.
 
 @app.on_event("startup")
 def on_startup():
