@@ -1,8 +1,8 @@
-# src/schemas/pedido.py
 from pydantic import BaseModel, Field
 from datetime import datetime
 from typing import List, Optional
 
+# já existentes...
 class ItemPedidoCreate(BaseModel):
     produtoId: int = Field(..., alias="produtoId")
     quantidade: int
@@ -49,6 +49,31 @@ class PedidoStatusUpdateResponse(BaseModel):
     pedidoId: str = Field(..., alias="pedidoId")
     status: str
     atualizadoEm: datetime = Field(..., alias="atualizadoEm")
+
+    class Config:
+        populate_by_name = True
+
+# ─── Novo: para a visão de produção ───────────────────────────────
+
+from src.schemas.produto import Adicional
+
+class ItemProducaoResponse(BaseModel):
+    produtoNome: str = Field(..., alias="produtoNome")
+    produtoDescricao: Optional[str] = Field(None, alias="produtoDescricao")
+    produtoAdicionais: Optional[List[Adicional]] = Field(None, alias="produtoAdicionais")
+    quantidade: int
+    observacoes: Optional[str]
+
+    class Config:
+        populate_by_name = True
+
+class PedidoProducaoResponse(BaseModel):
+    mesaNome: str = Field(..., alias="mesaNome")
+    timestamp: datetime
+    status: str
+    observacoesGerais: Optional[str]
+    estimativaEntrega: datetime = Field(..., alias="estimativaEntrega")
+    itens: List[ItemProducaoResponse]
 
     class Config:
         populate_by_name = True
