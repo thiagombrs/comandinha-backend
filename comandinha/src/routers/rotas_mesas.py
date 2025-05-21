@@ -1,5 +1,3 @@
-# src/routers/rotas_mesas.py
-
 from fastapi import (
     APIRouter, Depends, HTTPException, status, Response,
     Security, Path, Query, Body
@@ -105,6 +103,29 @@ def validar_mesa_endpoint(
     db: Session = Depends(get_db)
 ):
     mesa = MesaRepositorio(db).validar_token(cred.credentials)
+    return MesaValidacaoResponse(
+        valido=True,
+        expiraEm=mesa.expira_em,
+        mesaId=str(mesa.id)
+    )
+
+
+@router.get(
+    "/{mesa_id}/status",
+    response_model=MesaValidacaoResponse,
+    status_code=status.HTTP_200_OK
+)
+def status_mesa_endpoint(
+    mesa_id: int = Path(...),
+    cred: HTTPAuthorizationCredentials = Security(bearer_scheme),
+    db: Session = Depends(get_db)
+):
+    mesa = MesaRepositorio(db).validar_token(cred.credentials)
+    if mesa.id != mesa_id:
+        raise HTTPException(
+            status.HTTP_401_UNAUTHORIZED,
+            "Token não corresponde à mesa informada"
+        )
     return MesaValidacaoResponse(
         valido=True,
         expiraEm=mesa.expira_em,

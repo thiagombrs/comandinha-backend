@@ -1,5 +1,5 @@
 from datetime import datetime, timedelta
-from typing import Optional
+from typing import Optional, List
 
 from sqlalchemy import select, delete
 from sqlalchemy.orm import Session, selectinload
@@ -66,7 +66,6 @@ class RepositorioPedido:
         return self.db.scalars(stmt).first()
 
     def remover(self, pedido_id: int) -> bool:
-        # exclui itens antes do cabeçalho
         del_items = delete(model_item.ItemPedido).where(
             model_item.ItemPedido.pedido_id == pedido_id
         )
@@ -82,12 +81,11 @@ class RepositorioPedido:
     def listar_por_mesa(
         self,
         mesa_id: int,
-        status: str | None = None,
-        desde: datetime | None = None
+        status: Optional[str] = None,
+        desde: Optional[datetime] = None
     ):
-        stmt = (
-            select(model_pedido.Pedido)
-            .where(model_pedido.Pedido.mesa_id == mesa_id)
+        stmt = select(model_pedido.Pedido).where(
+            model_pedido.Pedido.mesa_id == mesa_id
         )
         if status:
             stmt = stmt.where(model_pedido.Pedido.status == status)
@@ -99,16 +97,27 @@ class RepositorioPedido:
         )
         return self.db.scalars(stmt).all()
 
+    def listar_para_producao(self) -> List[model_pedido.Pedido]:
+        """
+        Retorna todos os pedidos com status 'confirmado' ou 'preparando',
+        com relacionamento de mesa, itens e produtos carregados.
+        """
+        stmt = (
+            select(model_pedido.Pedido)
+            .where(model_pedido.Pedido.status.in_(["confirmado", "preparando"]))
+            .options(
+                selectinload(model_pedido.Pedido.mesa),
+                selectinload(model_pedido.Pedido.itens)
+                .selectinload(model_item.ItemPedido.produto)
+            )
+        )
+        return self.db.scalars(stmt).all()
+
     def fechar_conta(self, mesa_id: int, forma_pagamento: str):
-        """
-        Marca todos os pedidos da mesa como 'concluido',
-        soma o valor total e retorna (lista_de_pedidos, total).
-        """
         pedidos = self.listar_por_mesa(mesa_id, status=None, desde=None)
         total = sum(p.valor_total for p in pedidos)
         for p in pedidos:
             p.status = "concluido"
-            # opcional: armazenar forma_pagamento em cada pedido
             self.db.add(p)
         self.db.commit()
         return pedidos, total
@@ -124,7 +133,6 @@ class RepositorioPedido:
             return None
         pedido.status = status
         pedido.atualizado_em = datetime.utcnow()
-        # se houver coluna para mensagem, poderia armazenar aqui
         self.db.add(pedido)
         self.db.commit()
         self.db.refresh(pedido)

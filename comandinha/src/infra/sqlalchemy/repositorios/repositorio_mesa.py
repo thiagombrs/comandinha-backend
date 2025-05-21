@@ -1,5 +1,3 @@
-# src/infra/sqlalchemy/repositorios/repositorio_mesa.py
-
 from sqlalchemy.orm import Session
 from sqlalchemy import select, delete as sa_delete
 from datetime import datetime, timedelta
