@@ -1,7 +1,7 @@
 from fastapi import APIRouter, HTTPException, status, Depends
 from sqlalchemy.orm import Session
-from datetime import datetime
 from typing import List
+from datetime import datetime
 
 from src.infra.sqlalchemy.config.database import get_db
 from src.infra.sqlalchemy.repositorios.repositorio_pedido import RepositorioPedido
@@ -34,7 +34,7 @@ def criar_pedido(
     repo = RepositorioPedido(db)
     pedido = repo.criar_pedido(pedido_create.mesaId, pedido_create)
 
-    # eager-load dos itens e produto.nome
+    # Eager-load dos itens e nome do produto
     db.refresh(pedido)
     for item in pedido.itens:
         _ = item.produto.nome
@@ -68,7 +68,7 @@ def listar_pedidos_producao(
     db: Session = Depends(get_db),
 ):
     """
-    Lista todos os pedidos em status 'confirmado' ou 'preparando' para produção.
+    Lista todos os pedidos em status 'confirmado' ou 'preparando' para a produção.
     """
     repo = RepositorioPedido(db)
     pedidos = repo.listar_para_producao()
@@ -81,6 +81,7 @@ def listar_pedidos_producao(
             _ = item.produto.nome
 
         resposta.append(PedidoProducaoResponse(
+            pedidoId=p.id,
             mesaNome=p.mesa.nome,
             timestamp=p.timestamp,
             status=p.status,
@@ -187,7 +188,7 @@ def atualizar_status_pedido(
             detail=f"Pedido {pedido_id} não encontrado"
         )
     return PedidoStatusUpdateResponse(
-        pedidoId=str(atualizado.id),
+        pedidoId=atualizado.id,
         status=atualizado.status,
         atualizadoEm=atualizado.atualizado_em
     )
