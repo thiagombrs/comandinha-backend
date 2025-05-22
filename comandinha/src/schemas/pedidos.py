@@ -67,6 +67,7 @@ class ItemProducaoResponse(BaseModel):
 
 class PedidoProducaoResponse(BaseModel):
     pedidoId: int = Field(..., alias="pedidoId")
+    mesaId: int = Field(..., alias="mesaId")
     mesaNome: str = Field(..., alias="mesaNome")
     timestamp: datetime
     status: str

@@ -1,7 +1,6 @@
 from fastapi import APIRouter, HTTPException, status, Depends
 from sqlalchemy.orm import Session
 from typing import List
-from datetime import datetime
 
 from src.infra.sqlalchemy.config.database import get_db
 from src.infra.sqlalchemy.repositorios.repositorio_pedido import RepositorioPedido
@@ -76,12 +75,14 @@ def listar_pedidos_producao(
     resposta: List[PedidoProducaoResponse] = []
     for p in pedidos:
         db.refresh(p)
+        # Eager-load mesa e itens
         _ = p.mesa.nome
         for item in p.itens:
             _ = item.produto.nome
 
         resposta.append(PedidoProducaoResponse(
             pedidoId=p.id,
+            mesaId=p.mesa.id,
             mesaNome=p.mesa.nome,
             timestamp=p.timestamp,
             status=p.status,
