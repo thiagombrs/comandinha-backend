@@ -1,11 +1,10 @@
-from datetime import datetime
 from fastapi import APIRouter, HTTPException, status, Depends
 from sqlalchemy.orm import Session
+from datetime import datetime
 from typing import List
 
 from src.infra.sqlalchemy.config.database import get_db
 from src.infra.sqlalchemy.repositorios.repositorio_pedido import RepositorioPedido
-from src.routers.dependencies import get_mesa_autenticada
 from src.schemas.pedidos import (
     PedidoCreate,
     PedidoResponse,
@@ -27,13 +26,15 @@ router = APIRouter(
 )
 def criar_pedido(
     pedido_create: PedidoCreate,
-    mesa=Depends(get_mesa_autenticada),
     db: Session = Depends(get_db),
 ):
+    """
+    Cria um pedido para a mesa indicada em pedido_create.mesaId.
+    """
     repo = RepositorioPedido(db)
-    pedido = repo.criar_pedido(mesa.id, pedido_create)
+    pedido = repo.criar_pedido(pedido_create.mesaId, pedido_create)
 
-    # recarrega itens com produto carregado
+    # eager-load dos itens e produto.nome
     db.refresh(pedido)
     for item in pedido.itens:
         _ = item.produto.nome
@@ -58,7 +59,6 @@ def criar_pedido(
         estimativaEntrega=pedido.estimativa_entrega
     )
 
-# ─── Rota de Produção ───────────────────────────────────────────────
 @router.get(
     "/producao",
     response_model=List[PedidoProducaoResponse],
@@ -67,18 +67,20 @@ def criar_pedido(
 def listar_pedidos_producao(
     db: Session = Depends(get_db),
 ):
+    """
+    Lista todos os pedidos em status 'confirmado' ou 'preparando' para produção.
+    """
     repo = RepositorioPedido(db)
     pedidos = repo.listar_para_producao()
 
-    result: List[PedidoProducaoResponse] = []
+    resposta: List[PedidoProducaoResponse] = []
     for p in pedidos:
-        # garante que mesa e itens estejam carregados
         db.refresh(p)
         _ = p.mesa.nome
         for item in p.itens:
             _ = item.produto.nome
 
-        result.append(PedidoProducaoResponse(
+        resposta.append(PedidoProducaoResponse(
             mesaNome=p.mesa.nome,
             timestamp=p.timestamp,
             status=p.status,
@@ -95,9 +97,8 @@ def listar_pedidos_producao(
                 for item in p.itens
             ]
         ))
-    return result
+    return resposta
 
-# ─── Rotas com parâmetro dinâmico ────────────────────────────────────
 @router.get(
     "/{pedido_id}",
     response_model=PedidoResponse,
@@ -107,6 +108,9 @@ def exibir_pedido(
     pedido_id: int,
     db: Session = Depends(get_db),
 ):
+    """
+    Obtém os detalhes de um pedido por ID.
+    """
     repo = RepositorioPedido(db)
     pedido = repo.buscar_por_id(pedido_id)
     if not pedido:
@@ -145,17 +149,18 @@ def exibir_pedido(
 )
 def remover_pedido(
     pedido_id: int,
-    mesa=Depends(get_mesa_autenticada),
     db: Session = Depends(get_db),
 ):
+    """
+    Remove um pedido e seus itens.
+    """
     repo = RepositorioPedido(db)
     ok = repo.remover(pedido_id)
     if not ok:
         raise HTTPException(
-            status.HTTP_404_NOT_FOUND,
+            status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Pedido {pedido_id} não encontrado"
         )
-    return
 
 @router.patch(
     "/{pedido_id}/status",
@@ -165,25 +170,24 @@ def remover_pedido(
 def atualizar_status_pedido(
     pedido_id: int,
     status_req: PedidoStatusUpdateRequest,
-    mesa=Depends(get_mesa_autenticada),
     db: Session = Depends(get_db),
 ):
+    """
+    Atualiza o status de um pedido.
+    """
     repo = RepositorioPedido(db)
-    pedido = repo.buscar_por_id(pedido_id)
-    if not pedido:
+    atualizado = repo.atualizar_status(
+        pedido_id,
+        status_req.status,
+        status_req.mensagem
+    )
+    if not atualizado:
         raise HTTPException(
-            status.HTTP_404_NOT_FOUND,
+            status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Pedido {pedido_id} não encontrado"
         )
-    if pedido.mesa_id != mesa.id:
-        raise HTTPException(
-            status.HTTP_401_UNAUTHORIZED,
-            detail="Token não autorizado para este pedido"
-        )
-
-    updated = repo.atualizar_status(pedido_id, status_req.status)
     return PedidoStatusUpdateResponse(
-        pedidoId=str(updated.id),
-        status=updated.status,
-        atualizadoEm=updated.atualizado_em
+        pedidoId=str(atualizado.id),
+        status=atualizado.status,
+        atualizadoEm=atualizado.atualizado_em
     )
