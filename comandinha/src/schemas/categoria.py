@@ -1,4 +1,4 @@
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict
 from typing import Optional
 
 class CategoriaCreate(BaseModel):
@@ -22,6 +22,13 @@ class CategoriaSimples(BaseModel):
     class Config:
         from_attributes = True
         allow_population_by_field_name = True
+
+class CategoriaUpdate(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    nome: Optional[str] = None
+    descricao: Optional[str] = None
+    imagemUrl: Optional[str] = None
+    ordem: Optional[int] = None
 
 
 class CategoriaRead(CategoriaSimples):

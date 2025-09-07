@@ -1,4 +1,4 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 from typing import Optional
 from datetime import datetime
 
@@ -7,8 +7,9 @@ class MesaCriacaoRequest(BaseModel):
 
 class MesaCriacaoResponse(BaseModel):
     id: int
+    uuid: str
     nome: str
-
+    
     class Config:
         from_attributes = True
 
@@ -19,8 +20,9 @@ class MesaAtivacaoRequest(BaseModel):
 class MesaAtivacaoResponse(BaseModel):
     token: str
     expiraEm: datetime
-    mesaId: str
+    mesaId: int
     mesaNome: str
+    uuid: str
 
     class Config:
         from_attributes = True
@@ -46,6 +48,7 @@ class MesaFechamentoResponse(BaseModel):
 
 class MesaListResponse(BaseModel):
     id: int
+    uuid: str
     nome: str
     status: str
 

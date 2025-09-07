@@ -8,6 +8,11 @@ from src.infra.sqlalchemy.models.mesa import Mesa
 from src.infra.sqlalchemy.models.pedido import Pedido as ModelPedido
 from src.infra.providers.token_provider import token_provider
 
+import secrets
+
+TOKEN_TTL_MINUTES = 120  # quanto tempo a sessão da mesa fica ativa
+
+
 class MesaRepositorio:
     def __init__(self, db: Session):
         self.db = db
@@ -106,6 +111,31 @@ class MesaRepositorio:
         self.db.commit()
         self.db.refresh(mesa)
         return mesa
+
+    def get_mesa_por_uuid(self, mesa_uuid: str) -> Optional[Mesa]:
+        stmt = select(Mesa).where(Mesa.uuid == mesa_uuid)
+        return self.db.scalars(stmt).first()
+    
+    def ativar_por_uuid(self, mesa_uuid: str) -> Mesa:
+        mesa = self.get_mesa_por_uuid(mesa_uuid)
+        if not mesa:
+            return None
+        mesa.token = secrets.token_urlsafe(32)
+        mesa.expira_em = datetime.utcnow() + timedelta(minutes=TOKEN_TTL_MINUTES)
+        self.db.add(mesa)
+        self.db.commit()
+        self.db.refresh(mesa)
+        return mesa
+    
+    def encerrar_sessao(self, mesa_id: int) -> bool:
+        mesa = self.db.get(Mesa, mesa_id)
+        if not mesa:
+            return False
+        mesa.token = None
+        mesa.expira_em = None
+        self.db.add(mesa)
+        self.db.commit()
+        return True
 
     def excluir_mesa(self, mesa_id: int) -> None:
         mesa = self.get_mesa_por_id(mesa_id)

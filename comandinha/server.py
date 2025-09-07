@@ -10,6 +10,9 @@ from src.routers.rotas_mesas import router as mesas_router
 from src.routers.rotas_categorias import router as categorias_router
 from src.routers.rotas_produtos import router as produtos_router
 from src.routers.rotas_pedidos import router as pedidos_router
+from src.routers.rotas_auth import router as auth_router
+from src.routers.rotas_admin import router as admin_router
+
 # from src.routers.rotas_chamados import router as chamados_router  # opcional
 
 app = FastAPI(
@@ -51,6 +54,8 @@ app.include_router(mesas_router)
 app.include_router(categorias_router)
 app.include_router(produtos_router)
 app.include_router(pedidos_router)
+app.include_router(auth_router)
+app.include_router(admin_router)
 # app.include_router(chamados_router, prefix="/chamados", tags=["chamados"])
 
 # permite rodar com "python server.py"

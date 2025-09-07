@@ -48,6 +48,7 @@ def listar_mesas_endpoint(
         resultado.append(
             MesaListResponse(
                 id=m.id,
+                uuid=m.uuid,
                 nome=m.nome,
                 status=status_str
             )
@@ -61,7 +62,7 @@ def criar_mesa_endpoint(
     db: Session = Depends(get_db)
 ):
     mesa = MesaRepositorio(db).criar_mesa(req.nome)
-    return MesaCriacaoResponse(id=mesa.id, nome=mesa.nome)
+    return MesaCriacaoResponse(id=mesa.id, uuid=mesa.uuid, nome=mesa.nome)
 
 
 @router.post("/ativar", response_model=MesaAtivacaoResponse)
@@ -234,7 +235,77 @@ def fechar_conta_endpoint(
         statusMesa="fechada"
     )
 
+@router.get("/uuid/{mesa_uuid}", response_model=MesaListResponse)
+def obter_mesa_por_uuid(
+    mesa_uuid: str,
+    db: Session = Depends(get_db)
+):
+    repo = MesaRepositorio(db)
+    mesa = repo.get_mesa_por_uuid(mesa_uuid)
+    if not mesa:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Mesa não encontrada")
+    
+    agora = datetime.utcnow()
+    status_str = "disponível"
+    if mesa.token:
+        if mesa.expira_em and mesa.expira_em < agora:
+            status_str = "expirada"
+        else:
+            status_str = "em uso"
+    
+    return MesaListResponse(
+        id=mesa.id,
+        uuid=mesa.uuid,
+        nome=mesa.nome,
+        status=status_str
+    )
 
+@router.post("/uuid/{mesa_uuid}/ativar", response_model=MesaAtivacaoResponse)
+def ativar_mesa_por_uuid(mesa_uuid: str, db: Session = Depends(get_db)):
+    repo = MesaRepositorio(db)
+    mesa = repo.ativar_por_uuid(mesa_uuid)
+    if not mesa:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Mesa não encontrada")
+    return MesaAtivacaoResponse(
+        token=mesa.token,
+        expiraEm=mesa.expira_em,
+        mesaId=mesa.id,
+        mesaNome=mesa.nome,
+        uuid=mesa.uuid
+    )
+
+@router.get("/uuid/{mesa_uuid}/validar", response_model=MesaAtivacaoResponse)
+def validar_mesa_por_uuid(mesa_uuid: str, db: Session = Depends(get_db)):
+    """
+    Retorna status atual da mesa (se tem token e se está expirado).
+    Útil pro front decidir se precisa reativar.
+    """
+    repo = MesaRepositorio(db)
+    mesa = repo.get_mesa_por_uuid(mesa_uuid)
+    if not mesa:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Mesa não encontrada")
+
+    if mesa.token and mesa.expira_em and mesa.expira_em > datetime.utcnow():
+        # sessão válida
+        return MesaAtivacaoResponse(
+            token=mesa.token,
+            expiraEm=mesa.expira_em,
+            mesaId=mesa.id,
+            mesaNome=mesa.nome,
+            uuid=mesa.uuid
+        )
+    else:
+        # sessão inválida/expirada — retorna 401 para o front saber que precisa ativar
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Sessão expirada ou inexistente")
+
+@router.post("/{mesa_id}/encerrar", status_code=status.HTTP_204_NO_CONTENT)
+def encerrar_sessao_mesa(mesa_id: int, db: Session = Depends(get_db)):
+    repo = MesaRepositorio(db)
+    ok = repo.encerrar_sessao(mesa_id)
+    if not ok:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Mesa não encontrada")
+    
+    
 @router.delete(
     "/{mesa_id}",
     status_code=status.HTTP_204_NO_CONTENT
