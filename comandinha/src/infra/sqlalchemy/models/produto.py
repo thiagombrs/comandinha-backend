@@ -1,5 +1,5 @@
 from sqlalchemy import (
-    Column, Integer, String, Float, Boolean, ForeignKey, JSON
+    Column, Integer, String, Float, Boolean, ForeignKey, JSON, text
 )
 from sqlalchemy.orm import relationship
 from src.infra.sqlalchemy.config.database import Base
@@ -18,6 +18,13 @@ class Produto(Base):
     # campos novos
     restricoes = Column(JSON, nullable=True)    # ex: ["vegetariano","vegano"]
     adicionais = Column(JSON, nullable=True)    # ex: [{"id":"a1","nome":"Queijo","preco":5.0}]
+
+    # NOVO
+    disponivel = Column(Boolean, nullable=False, server_default=text("1"), default=True)
+
+    # campos novos
+    restricoes = Column(JSON, nullable=True)
+    adicionais = Column(JSON, nullable=True)
 
     categoria_id = Column(
         Integer,

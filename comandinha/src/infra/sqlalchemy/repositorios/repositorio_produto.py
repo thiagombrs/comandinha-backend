@@ -56,6 +56,14 @@ class RepositorioProduto:
         result = self.db.execute(stmt)
         self.db.commit()
         return result.rowcount > 0
+    
+    def editar_parcial(self, id: int, campos: dict) -> bool:
+        if not campos:
+            return True
+        stmt = update(model_produto.Produto).where(model_produto.Produto.id == id).values(**campos)
+        result = self.db.execute(stmt)
+        self.db.commit()
+        return result.rowcount > 0
 
     def listar_recomendados(self, limite: int):
         stmt = (

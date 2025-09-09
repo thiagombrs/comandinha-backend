@@ -144,7 +144,8 @@ def atualizar_categoria_parcial(
     if not obj:
         raise HTTPException(status.HTTP_404_NOT_FOUND, f"Categoria {id} não encontrada")
 
-    data = patch.model_dump(exclude_unset=True)
+    # >>> use by_alias=False para garantir 'imagem_url'
+    data = patch.model_dump(exclude_unset=True, by_alias=False)
     for k, v in data.items():
         setattr(obj, k, v)
 

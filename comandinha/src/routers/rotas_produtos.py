@@ -6,7 +6,7 @@ from typing import List, Optional
 
 from src.infra.sqlalchemy.config.database import get_db
 from src.infra.sqlalchemy.repositorios.repositorio_produto import RepositorioProduto
-from src.schemas.produto import ProdutoCreate, ProdutoSimples, ProdutoDetalhado
+from src.schemas.produto import ProdutoCreate, ProdutoSimples, ProdutoDetalhado, ProdutoUpdate
 
 # proteção admin
 from src.dependencies import get_current_admin
@@ -53,6 +53,31 @@ def atualizar_produto(
     return ProdutoSimples \
         .model_validate(obj, from_attributes=True, by_name=True) \
         .model_dump(by_alias=True)
+
+@router.patch(
+    "/{id}",
+    response_model=ProdutoSimples
+)
+def atualizar_produto_parcial(
+    id: int,
+    patch: ProdutoUpdate,
+    db: Session = Depends(get_db),
+    _: Restaurante = Depends(get_current_admin),  # requer admin
+):
+    repo = RepositorioProduto(db)
+    obj = repo.buscar_por_id(id)
+    if not obj:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, f"Produto {id} não encontrado")
+
+    # chaves no formato do ORM (sem alias) para bater com as colunas do modelo
+    data = patch.model_dump(exclude_unset=True, by_alias=False)
+    if not repo.editar_parcial(id, data):
+        raise HTTPException(status.HTTP_404_NOT_FOUND, f"Produto {id} não encontrado")
+    obj = repo.buscar_por_id(id)
+
+    db.commit()
+    db.refresh(obj)
+    return ProdutoSimples.model_validate(obj, from_attributes=True, by_name=True).model_dump(by_alias=True)
 
 
 @router.delete(
@@ -125,3 +150,17 @@ def exibir_produto(
     return ProdutoDetalhado \
         .model_validate(obj, from_attributes=True, by_name=True) \
         .model_dump(by_alias=True)
+
+
+@router.get("", response_model=List[ProdutoDetalhado])
+def listar_produtos(
+    categoria_id: int | None = Query(None, alias="categoriaId"),
+    somente_disponiveis: bool = Query(False, alias="somenteDisponiveis"),
+    db: Session = Depends(get_db),
+):
+    repo = RepositorioProduto(db)
+    objs = repo.listar_por_categoria(categoria_id) if categoria_id else repo.listar_com_categorias()
+    if somente_disponiveis:
+        objs = [o for o in objs if getattr(o, "disponivel", True)]
+    return [ProdutoDetalhado.model_validate(o, from_attributes=True, by_name=True).model_dump(by_alias=True) for o in objs]
+

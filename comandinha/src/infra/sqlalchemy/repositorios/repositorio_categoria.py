@@ -1,4 +1,4 @@
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.orm import Session, selectinload
 from src.infra.sqlalchemy.models.categoria import Categoria
 from src.schemas.categoria import CategoriaCreate
@@ -33,6 +33,22 @@ class CategoriaRepositorio:
             .options(selectinload(Categoria.produtos))
         )
         return self.db.scalars(stmt).first()
+    
+    def editar(self, id: int, dto: CategoriaCreate) -> bool:
+        data = {
+            "nome": dto.nome,
+            "descricao": dto.descricao,
+            "imagem_url": dto.imagem_url,
+            "ordem": dto.ordem,
+        }
+        stmt = (
+            update(Categoria)
+            .where(Categoria.id == id)
+            .values(**data)
+        )
+        result = self.db.execute(stmt)
+        self.db.commit()
+        return result.rowcount > 0
 
     def remover(self, id: int) -> bool:
         categoria = self.db.get(Categoria, id)
