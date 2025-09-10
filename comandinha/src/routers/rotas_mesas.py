@@ -25,6 +25,9 @@ from src.infra.sqlalchemy.repositorios.repositorio_mesa import MesaRepositorio
 from src.infra.sqlalchemy.repositorios.repositorio_pedido import RepositorioPedido
 from src.infra.providers.token_provider import token_provider
 
+from src.dependencies import get_current_admin
+from src.infra.sqlalchemy.models.restaurante import Restaurante
+
 # Dois esquemas de Bearer: um para ADMIN e outro para MESA
 bearer_admin = HTTPBearer(auto_error=True)
 bearer_mesa  = HTTPBearer(auto_error=True)
@@ -68,7 +71,7 @@ def require_mesa_token(
     status_code=status.HTTP_200_OK
 )
 def listar_mesas_endpoint(
-    _admin_token: str = Depends(require_admin),
+    _: Restaurante = Depends(get_current_admin),
     db: Session = Depends(get_db)
 ):
     repo = MesaRepositorio(db)
@@ -96,7 +99,7 @@ def listar_mesas_endpoint(
 @router.post("", response_model=MesaCriacaoResponse, status_code=status.HTTP_201_CREATED)
 def criar_mesa_endpoint(
     req: MesaCriacaoRequest,
-    _admin_token: str = Depends(require_admin),
+    _: Restaurante = Depends(get_current_admin),
     db: Session = Depends(get_db)
 ):
     mesa = MesaRepositorio(db).criar_mesa(req.nome)
@@ -106,7 +109,7 @@ def criar_mesa_endpoint(
 @router.post("/{mesa_id}/encerrar", status_code=status.HTTP_204_NO_CONTENT)
 def encerrar_sessao_mesa(
     mesa_id: int,
-    _admin_token: str = Depends(require_admin),
+    _: Restaurante = Depends(get_current_admin),
     db: Session = Depends(get_db)
 ):
     repo = MesaRepositorio(db)
@@ -121,7 +124,7 @@ def encerrar_sessao_mesa(
 )
 def excluir_mesa_endpoint(
     mesa_id: int = Path(...),
-    _admin_token: str = Depends(require_admin),
+    _: Restaurante = Depends(get_current_admin),
     db: Session = Depends(get_db)
 ):
     MesaRepositorio(db).excluir_mesa(mesa_id)
@@ -135,7 +138,7 @@ def excluir_mesa_endpoint(
 )
 def desativar_mesa_endpoint_admin(
     mesa_id: int = Path(...),
-    _admin_token: str = Depends(require_admin),
+    _: Restaurante = Depends(get_current_admin),
     db: Session = Depends(get_db)
 ):
     """
@@ -152,7 +155,7 @@ def desativar_mesa_endpoint_admin(
 def fechar_conta_endpoint_admin(
     mesa_id: int = Path(...),
     req: MesaFechamentoRequest = Body(...),
-    _admin_token: str = Depends(require_admin),
+    _: Restaurante = Depends(get_current_admin),
     db: Session = Depends(get_db)
 ):
     """
