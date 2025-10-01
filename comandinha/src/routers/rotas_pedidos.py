@@ -1,9 +1,10 @@
-from fastapi import APIRouter, HTTPException, status, Depends
+from fastapi import APIRouter, HTTPException, status, Depends, Path, Body
 from sqlalchemy.orm import Session
 from typing import List
 
 from src.infra.sqlalchemy.config.database import get_db
 from src.infra.sqlalchemy.repositorios.repositorio_pedido import RepositorioPedido
+from src.infra.sqlalchemy.repositorios.repositorio_mesa import MesaRepositorio
 from src.schemas.pedidos import (
     PedidoCreate,
     PedidoResponse,
@@ -13,10 +14,32 @@ from src.schemas.pedidos import (
     ItemProducaoResponse
 )
 
+from src.schemas.pedidos import PedidoStatusPatchRequest, PedidoStatusPatchResponse
+from src.infra.sqlalchemy.models.restaurante import Restaurante
+from src.dependencies import get_current_admin
+
 router = APIRouter(
     prefix="/pedidos",
     tags=["pedidos"]
 )
+
+@router.get("", status_code=200)
+def listar_pedidos_nao_concluidos(
+    _: Restaurante = Depends(get_current_admin),
+    db: Session = Depends(get_db)
+):
+    repo = RepositorioPedido(db)
+    pedidos = repo.listar_nao_concluidos()
+    return [{
+        "id": p.id,
+        "mesa_id": p.mesa_id,
+        "status": p.status,
+        "status_id": p.status_id,
+        "valor_total": p.valor_total,
+        "estimativa_entrega": p.estimativa_entrega,
+        "atualizado_em": p.atualizado_em,
+        "timestamp": p.timestamp,
+    } for p in pedidos]
 
 @router.post(
     "",
@@ -28,10 +51,18 @@ def criar_pedido(
     db: Session = Depends(get_db),
 ):
     """
-    Cria um pedido para a mesa indicada em pedido_create.mesaId.
+    Cria um pedido para a mesa identificada por UUID (cliente).
     """
+    # Resolve mesa pelo UUID
+    mrepo = MesaRepositorio(db)
+    mesa = mrepo.get_mesa_por_uuid(pedido_create.uuid)
+    if not mesa:
+        raise HTTPException(status_code=404, detail="Mesa não encontrada")
+    if getattr(mesa, "status_id", 1) == 4 or getattr(mesa, "ativo", True) is False:
+        raise HTTPException(status_code=400, detail="Mesa desativada")
+
     repo = RepositorioPedido(db)
-    pedido = repo.criar_pedido(pedido_create.mesaId, pedido_create)
+    pedido = repo.criar_pedido(mesa.id, pedido_create)
 
     # Eager-load dos itens e nome do produto
     db.refresh(pedido)
@@ -152,10 +183,8 @@ def exibir_pedido(
 def remover_pedido(
     pedido_id: int,
     db: Session = Depends(get_db),
+    _: Restaurante = Depends(get_current_admin),
 ):
-    """
-    Remove um pedido e seus itens.
-    """
     repo = RepositorioPedido(db)
     ok = repo.remover(pedido_id)
     if not ok:
@@ -164,32 +193,23 @@ def remover_pedido(
             detail=f"Pedido {pedido_id} não encontrado"
         )
 
-@router.patch(
-    "/{pedido_id}/status",
-    response_model=PedidoStatusUpdateResponse,
-    status_code=status.HTTP_200_OK
-)
+@router.patch("/{pedido_id}/status", response_model=PedidoStatusPatchResponse)
 def atualizar_status_pedido(
-    pedido_id: int,
-    status_req: PedidoStatusUpdateRequest,
+    pedido_id: int = Path(...),
+    req: PedidoStatusPatchRequest = Body(...),
+    _: Restaurante = Depends(get_current_admin),
     db: Session = Depends(get_db),
 ):
-    """
-    Atualiza o status de um pedido.
-    """
     repo = RepositorioPedido(db)
-    atualizado = repo.atualizar_status(
-        pedido_id,
-        status_req.status,
-        status_req.mensagem
-    )
-    if not atualizado:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Pedido {pedido_id} não encontrado"
-        )
-    return PedidoStatusUpdateResponse(
-        pedidoId=atualizado.id,
-        status=atualizado.status,
-        atualizadoEm=atualizado.atualizado_em
-    )
+    p = repo.atualizar_status_id(pedido_id, req.status_id)
+    return {"status": p.status, "status_id": p.status_id}
+
+# === NOVO: limpar tudo (somente ADMIN) ===
+@router.delete("", status_code=status.HTTP_200_OK)
+def limpar_todos_pedidos(
+    db: Session = Depends(get_db),
+    _: Restaurante = Depends(get_current_admin),
+):
+    repo = RepositorioPedido(db)
+    total = repo.limpar_todos()
+    return {"mensagem": f"{total} pedidos removidos com sucesso"}

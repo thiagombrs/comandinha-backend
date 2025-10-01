@@ -1,185 +1,95 @@
+
+from __future__ import annotations
 from sqlalchemy.orm import Session
 from sqlalchemy import select, delete as sa_delete
-from datetime import datetime, timedelta
 from fastapi import HTTPException, status
-from typing import Optional, List
-
+from typing import Optional, List, Tuple
 from src.infra.sqlalchemy.models.mesa import Mesa
 from src.infra.sqlalchemy.models.pedido import Pedido as ModelPedido
-from src.infra.providers.token_provider import token_provider
 
-import secrets
-
-TOKEN_TTL_MINUTES = 120  # quanto tempo a sessão da mesa fica ativa
-
+# 1=disponivel, 2=em_uso, 3=expirada, 4=desativada
+STATUS_MAP: dict[int, str] = {
+    1: "disponivel",
+    2: "em_uso",
+    3: "expirada",
+    4: "desativada",
+}
 
 class MesaRepositorio:
     def __init__(self, db: Session):
         self.db = db
 
-    def criar_mesa(self, nome: str) -> Mesa:
-        mesa = Mesa(nome=nome)
-        self.db.add(mesa)
-        self.db.commit()
-        self.db.refresh(mesa)
-        return mesa
+    # ---------- helpers ----------
+    @staticmethod
+    def _status_from_mesa(m: Mesa) -> Tuple[str, int]:
+        """
+        1 - disponivel   (ativo=True e sem pedidos abertos)
+        2 - em_uso       (ativo=True e com pedidos não concluídos)
+        4 - desativada   (ativo=False)
+        """
+        if m.ativo is False:
+            return "desativada", 4
+        # se houver pedidos ativos, considere em_uso
+        tem_ativos = any(p.status != "concluido" for p in m.pedidos)
+        sid = 2 if tem_ativos else (m.status_id or 1)
+        return STATUS_MAP.get(sid, "disponivel"), sid
 
+    def _tem_pedidos_ativos(self, mesa_id: int) -> bool:
+        return (
+            self.db.query(ModelPedido)
+            .filter(ModelPedido.mesa_id == mesa_id, ModelPedido.status != "concluido")
+            .limit(1).count() > 0
+        )
+
+    # ---------- CRUD ----------
     def listar_mesas(self) -> List[Mesa]:
         stmt = select(Mesa)
         return self.db.scalars(stmt).all()
 
-    def get_mesa_por_id(self, mesa_id: int) -> Optional[Mesa]:
-        return self.db.get(Mesa, mesa_id)
-
-    def get_mesa_por_token(self, token: str) -> Mesa:
-        stmt = select(Mesa).where(Mesa.token == token)
-        mesa = self.db.scalars(stmt).first()
-        if not mesa:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Token de mesa inválido"
-            )
-        return mesa
-
-    def ativar_mesa(
-        self,
-        mesa_id: int,
-        codigo_confirmacao: Optional[str] = None,
-        validade_minutos: int = 60
-    ) -> Mesa:
-        mesa = self.get_mesa_por_id(mesa_id)
-        if not mesa:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Mesa {mesa_id} não existe"
-            )
-        if mesa.ativo:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Mesa já está ativa"
-            )
-
-        expires_delta = timedelta(minutes=validade_minutos)
-        token = token_provider.criar_access_token(
-            {"mesa_id": mesa.id},
-            expires_delta
-        )
-        mesa.token     = token
-        mesa.expira_em = datetime.utcnow() + expires_delta
-        mesa.ativo     = True
-
-        self.db.add(mesa)
-        self.db.commit()
-        self.db.refresh(mesa)
-        return mesa
-
-    def validar_token(self, token: str) -> Mesa:
-        try:
-            mesa_id = token_provider.verify_mesa_token(token)
-        except HTTPException:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Token de mesa inválido ou expirado"
-            )
-
-        mesa = self.get_mesa_por_id(mesa_id)
-        if not mesa:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Mesa não encontrada"
-            )
-        return mesa
-
-    def desativar_mesa(self, mesa_id: int) -> Mesa:
-        mesa = self.get_mesa_por_id(mesa_id)
-        if not mesa:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"Mesa {mesa_id} não existe"
-            )
-        if not mesa.ativo:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Mesa já está desativada"
-            )
-
-        mesa.ativo     = False
-        mesa.token     = None
-        mesa.expira_em = None
-
-        self.db.add(mesa)
-        self.db.commit()
-        self.db.refresh(mesa)
-        return mesa
-
     def get_mesa_por_uuid(self, mesa_uuid: str) -> Optional[Mesa]:
         stmt = select(Mesa).where(Mesa.uuid == mesa_uuid)
         return self.db.scalars(stmt).first()
-    
-    def ativar_por_uuid(self, mesa_uuid: str) -> Mesa:
-        mesa = self.get_mesa_por_uuid(mesa_uuid)
-        if not mesa:
-            return None
-        mesa.token = secrets.token_urlsafe(32)
-        mesa.expira_em = datetime.utcnow() + timedelta(minutes=TOKEN_TTL_MINUTES)
+
+    def get_mesa_por_id(self, mesa_id: int) -> Optional[Mesa]:
+        return self.db.get(Mesa, mesa_id)
+
+    def criar_mesa(self, nome: str) -> Mesa:
+        mesa = Mesa(nome=nome, ativo=True)  # nasce ativa, sem token
         self.db.add(mesa)
         self.db.commit()
         self.db.refresh(mesa)
         return mesa
-    
-    def encerrar_sessao(self, mesa_id: int) -> bool:
-        mesa = self.db.get(Mesa, mesa_id)
-        if not mesa:
-            return False
-        mesa.token = None
-        mesa.expira_em = None
-        self.db.add(mesa)
-        self.db.commit()
-        return True
 
-    def excluir_mesa(self, mesa_id: int) -> None:
-        mesa = self.get_mesa_por_id(mesa_id)
-        if not mesa:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"Mesa {mesa_id} não existe"
-            )
-        if mesa.ativo:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Só é possível excluir mesas desativadas"
-            )
-        pendentes = (
-            self.db.query(ModelPedido)
-            .filter(
-                ModelPedido.mesa_id == mesa_id,
-                ModelPedido.status != "concluido"
-            )
-            .count()
-        )
-        if pendentes > 0:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Não é possível excluir mesa com pedidos não concluídos"
-            )
-        # deleta pedidos concluídos
-        self.db.execute(
-            sa_delete(ModelPedido).where(ModelPedido.mesa_id == mesa_id)
-        )
-        self.db.commit()
-        mesa = self.get_mesa_por_id(mesa_id)
-        self.db.delete(mesa)
+    def excluir_mesa(self, mesa_id: int):
+        m = self.get_mesa_por_id(mesa_id)
+        if not m:
+            raise HTTPException(status_code=404, detail="Mesa não encontrada")
+        self.db.delete(m)
         self.db.commit()
 
-    def refresh_mesa(
-        self,
-        token: str,
-        validade_minutos: int = 60
-    ) -> Mesa:
-        mesa = self.get_mesa_por_token(token)
-        expires_delta = timedelta(minutes=validade_minutos)
-        mesa.expira_em = datetime.utcnow() + expires_delta
+    # ---------- atualização de status ----------
+    def _set_status(self, mesa: Mesa, status_id: int) -> Mesa:
+        if status_id not in STATUS_MAP:
+            raise HTTPException(status_code=400, detail="status_id inválido (use 1..4)")
+        mesa.status_id = status_id            # <— agora grava em status_id
+        mesa.ativo = (status_id != 4)         # manter compatibilidade
         self.db.add(mesa)
         self.db.commit()
         self.db.refresh(mesa)
         return mesa
+
+    def alterar_status(self, mesa_id: int, status_id: int) -> Mesa:
+        if status_id not in (1, 4):
+            raise HTTPException(status_code=400, detail="status_id inválido (use 1 ou 4)")
+        mesa = self.get_mesa_por_id(mesa_id)
+        if not mesa:
+            raise HTTPException(status_code=404, detail="Mesa não encontrada")
+        if self._tem_pedidos_ativos(mesa_id):
+            raise HTTPException(status_code=400, detail="Mesa possui pedidos ativos")
+        return self._set_status(mesa, status_id)
+
+    def limpar_sessao_voltar_disponivel(self, mesa_id: int) -> Mesa:
+        mesa = self.get_mesa_por_id(mesa_id)
+        if not mesa:
+            raise HTTPException(status_code=404, detail="Mesa não encontrada")
+        return self._set_status(mesa, 1)

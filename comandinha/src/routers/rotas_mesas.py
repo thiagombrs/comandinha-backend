@@ -1,100 +1,102 @@
-# rotas_mesas.py
-
 from fastapi import (
     APIRouter, Depends, HTTPException, status, Response,
-    Security, Path, Query, Body
+    Path, Query, Body
 )
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from sqlalchemy.orm import Session
-from datetime import datetime
 from typing import Optional, List
+from datetime import datetime, timezone
 
 from src.schemas.mesa import (
     MesaCriacaoRequest,
     MesaCriacaoResponse,
     MesaListResponse,
-    MesaAtivacaoRequest,
-    MesaAtivacaoResponse,
-    MesaValidacaoResponse,
     MesaFechamentoRequest,
-    MesaFechamentoResponse,
 )
 from src.schemas.pedidos import PedidoResponse
 from src.infra.sqlalchemy.config.database import get_db
 from src.infra.sqlalchemy.repositorios.repositorio_mesa import MesaRepositorio
 from src.infra.sqlalchemy.repositorios.repositorio_pedido import RepositorioPedido
-from src.infra.providers.token_provider import token_provider
-
 from src.dependencies import get_current_admin
 from src.infra.sqlalchemy.models.restaurante import Restaurante
-
-# Dois esquemas de Bearer: um para ADMIN e outro para MESA
-bearer_admin = HTTPBearer(auto_error=True)
-bearer_mesa  = HTTPBearer(auto_error=True)
+from src.infra.sqlalchemy.models.pedido import Pedido as ModelPedido
 
 router = APIRouter(prefix="/mesas", tags=["mesas"])
 
+# ---------------- Helpers ----------------
 
-# ---------- Dependências de segurança ----------
+STATUS_MAP = {1: "disponivel", 2: "em_uso", 3: "expirada", 4: "desativada"}
 
-def require_admin(
-    cred: HTTPAuthorizationCredentials = Security(bearer_admin),
-):
-    """Valida o token de ADMIN."""
-    try:
-        token_provider.verify_admin_token(cred.credentials)
-    except Exception:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Token de admin inválido ou expirado"
-        )
-    return cred.credentials
+# rotas_mesas.py — substitua APENAS este helper
 
+STATUS_MAP = {1: "disponivel", 2: "em_uso", 3: "expirada", 4: "desativada"}
 
-def require_mesa_token(
-    cred: HTTPAuthorizationCredentials = Security(bearer_mesa),
-):
-    """Obtém o token da MESA (validação detalhada ocorre nas rotas)."""
-    if not cred or not cred.credentials:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Token de mesa ausente"
-        )
-    return cred.credentials
+def _status_from_mesa(m) -> tuple[str, int]:
+    """
+    Calcula e retorna (status_texto, status_id) a partir dos campos da mesa.
+      - 1 = disponivel
+      - 2 = em_uso
+      - 3 = expirada   (se houver regra temporal, aplique aqui)
+      - 4 = desativada (ativo == False)
+    """
+    # Se estiver inativa, força 4
+    if getattr(m, "ativo", True) is False:
+        sid = 4
+    else:
+        # lê a coluna nova; fallback 1 se vier None
+        sid = getattr(m, "status_id", None) or 1
+
+    texto = STATUS_MAP.get(sid, "disponivel")
+    return texto, sid
 
 
-# ---------- ROTAS (ADMIN) ----------
+def _tem_pedidos(db: Session, mesa_id: int) -> bool:
+    return db.query(ModelPedido).filter(ModelPedido.mesa_id == mesa_id).limit(1).count() > 0
 
-@router.get(
-    "",
-    response_model=List[MesaListResponse],
-    status_code=status.HTTP_200_OK
-)
-def listar_mesas_endpoint(
-    _: Restaurante = Depends(get_current_admin),
-    db: Session = Depends(get_db)
-):
+def _iso8601(dt):
+    if dt is None:
+        return None
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    else:
+        dt = dt.astimezone(timezone.utc)
+    return dt.isoformat().replace("+00:00", "Z")
+
+# ---------------- Públicos ----------------
+
+@router.get("", response_model=List[MesaListResponse], status_code=status.HTTP_200_OK)
+def listar_mesas_publico(db: Session = Depends(get_db)):
     repo = MesaRepositorio(db)
-    mesas = repo.listar_mesas()
-    agora = datetime.utcnow()
-    resultado = []
+    mesas = repo.listar_mesas()  # ou como você já busca
+    resp = []
     for m in mesas:
-        if m.token is None:
-            status_str = "disponível"
-        elif m.expira_em and m.expira_em < agora:
-            status_str = "expirada"
-        else:
-            status_str = "em uso"
-        resultado.append(
-            MesaListResponse(
-                id=m.id,
-                uuid=m.uuid,
-                nome=m.nome,
-                status=status_str
-            )
-        )
-    return resultado
+        status_str, status_id = _status_from_mesa(m)
+        resp.append({
+            "id": m.id,
+            "uuid": m.uuid,
+            "nome": m.nome,
+            "status": status_str,
+            "status_id": status_id,
+        })
+    return resp
 
+
+
+@router.get("/uuid/{mesa_uuid}", response_model=MesaListResponse)
+def obter_mesa_por_uuid(mesa_uuid: str, db: Session = Depends(get_db)):
+    repo = MesaRepositorio(db)
+    m = repo.get_mesa_por_uuid(mesa_uuid)
+    if not m:
+        raise HTTPException(status_code=404, detail="Mesa não encontrada")
+    status_str, status_id = _status_from_mesa(m)
+    return {
+        "id": m.id,
+        "uuid": m.uuid,
+        "nome": m.nome,
+        "status": status_str,
+        "status_id": status_id,
+    }
+
+# ---------------- Admin ----------------
 
 @router.post("", response_model=MesaCriacaoResponse, status_code=status.HTTP_201_CREATED)
 def criar_mesa_endpoint(
@@ -102,274 +104,151 @@ def criar_mesa_endpoint(
     _: Restaurante = Depends(get_current_admin),
     db: Session = Depends(get_db)
 ):
-    mesa = MesaRepositorio(db).criar_mesa(req.nome)
-    return MesaCriacaoResponse(id=mesa.id, uuid=mesa.uuid, nome=mesa.nome)
-
-
-@router.post("/{mesa_id}/encerrar", status_code=status.HTTP_204_NO_CONTENT)
-def encerrar_sessao_mesa(
-    mesa_id: int,
-    _: Restaurante = Depends(get_current_admin),
-    db: Session = Depends(get_db)
-):
     repo = MesaRepositorio(db)
-    ok = repo.encerrar_sessao(mesa_id)
-    if not ok:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "Mesa não encontrada")
+    mesa = repo.criar_mesa(req.nome)
+    status_str, status_id = _status_from_mesa(mesa)
+    return MesaCriacaoResponse(id=mesa.id, uuid=mesa.uuid, nome=mesa.nome).model_copy(
+        update={"status": status_str, "status_id": status_id}
+    )
 
-
-@router.delete(
-    "/{mesa_id}",
-    status_code=status.HTTP_204_NO_CONTENT
-)
+@router.delete("/{mesa_id}", status_code=status.HTTP_204_NO_CONTENT)
 def excluir_mesa_endpoint(
     mesa_id: int = Path(...),
     _: Restaurante = Depends(get_current_admin),
     db: Session = Depends(get_db)
 ):
-    MesaRepositorio(db).excluir_mesa(mesa_id)
+    mrepo = MesaRepositorio(db)
+    m = mrepo.get_mesa_por_id(mesa_id)
+    if not m:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Mesa não encontrada")
+    _, status_id = _status_from_mesa(m)
+    if status_id != 1:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Só é permitido deletar mesa 'disponivel'")
+    mrepo.excluir_mesa(mesa_id)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
+@router.get("/{mesa_id}", status_code=status.HTTP_200_OK)
+def obter_mesa_admin(
+    mesa_id: int,
+    db: Session = Depends(get_db),
+    admin = Depends(get_current_admin),  # se for protegido
+):
+    repo = MesaRepositorio(db)
+    m = repo.get_mesa_por_id(mesa_id)
+    if not m:
+        raise HTTPException(status_code=404, detail="Mesa não encontrada")
+    status_str, status_id = _status_from_mesa(m)
+    return {
+        "id": m.id,
+        "uuid": m.uuid,
+        "nome": m.nome,
+        "status": status_str,
+        "status_id": status_id,
+        "created_at": getattr(m, "created_at", None),
+        "updated_at": getattr(m, "updated_at", None),
+    }
 
-# >>> Ajustadas para ADMIN <<<
-@router.post(
-    "/{mesa_id}/desativar",
-    status_code=status.HTTP_204_NO_CONTENT
-)
-def desativar_mesa_endpoint_admin(
+@router.get("/{mesa_id}/status", status_code=status.HTTP_200_OK)
+def status_mesa_admin(
     mesa_id: int = Path(...),
     _: Restaurante = Depends(get_current_admin),
     db: Session = Depends(get_db)
 ):
-    """
-    Desativa a mesa (admin força o encerramento da sessão).
-    """
-    MesaRepositorio(db).desativar_mesa(mesa_id)
-    return Response(status_code=status.HTTP_204_NO_CONTENT)
+    m = MesaRepositorio(db).get_mesa_por_id(mesa_id)
+    if not m:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Mesa não encontrada")
+    status_str, status_id = _status_from_mesa(m)
+    return {
+        "mesa_id": m.id,
+        "status": status_str,
+        "status_id": status_id,
+        "tem_pedidos": _tem_pedidos(db, m.id),
+    }
 
+@router.get("/{mesa_id}/pedidos")
+def listar_pedidos_da_mesa_admin(
+    mesa_id: int,
+    status: str | None = Query(
+        default=None,
+        description="Lista separada por vírgula com status (ids ou textos). Ex: 1,2 ou pendente,preparo"
+    ),
+    desde: datetime | None = Query(
+        default=None,
+        description="Filtra a partir desta data/hora (ISO 8601). Ex: 2025-09-13T00:00:00"
+    ),
+    db: Session = Depends(get_db),
+):
+    repo_ped = RepositorioPedido(db)
 
-@router.post(
-    "/{mesa_id}/fechar",
-    response_model=MesaFechamentoResponse
-)
-def fechar_conta_endpoint_admin(
+    # Não filtra por status por padrão
+    status_list = None
+    if status:
+        status_list = [s.strip() for s in status.split(",") if s.strip()]
+
+    pedidos = repo_ped.listar_por_mesa(mesa_id, status_list, desde)
+    return pedidos
+
+@router.post("/{mesa_id}/status", status_code=status.HTTP_200_OK)
+def alterar_status_mesa_admin(
+    mesa_id: int = Path(...),
+    payload: dict = Body(...),
+    _: Restaurante = Depends(get_current_admin),
+    db: Session = Depends(get_db)
+):
+    try:
+        status_id_in = int(payload.get("status_id", 0))
+    except Exception:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "status_id inválido")
+
+    repo = MesaRepositorio(db)
+    m = repo.alterar_status(mesa_id, status_id_in)
+
+    status_str, status_id_calc = _status_from_mesa(m)
+    return {
+        "success": True,
+        "mesa": {
+            "id": m.id,
+            "uuid": m.uuid,
+            "status": status_str,
+            "status_id": status_id_calc,
+            "updated_at": _iso8601(getattr(m, "updated_at", None)),
+        }
+    }
+
+@router.post("/{mesa_id}/encerrar", status_code=status.HTTP_200_OK)
+def encerrar_mesa_admin(
     mesa_id: int = Path(...),
     req: MesaFechamentoRequest = Body(...),
     _: Restaurante = Depends(get_current_admin),
     db: Session = Depends(get_db)
 ):
-    """
-    Admin fecha a conta da mesa (calcula total e conclui pedidos) e desativa a mesa.
-    """
-    repo_ped = RepositorioPedido(db)
-    pedidos_concluidos, total = repo_ped.fechar_conta(mesa_id, req.formaPagamento)
-
-    repo_mesa = MesaRepositorio(db)
-    repo_mesa.desativar_mesa(mesa_id)
-
-    return MesaFechamentoResponse(
-        mesaId=str(mesa_id),
-        valorTotal=total,
-        statusMesa="fechada"
-    )
-
-
-# ---------- ROTAS (PÚBLICAS - fluxo QR/UUID) ----------
-
-@router.post("/ativar", response_model=MesaAtivacaoResponse)
-def ativar_mesa_endpoint(
-    req: MesaAtivacaoRequest,
-    db: Session = Depends(get_db)
-):
-    mesa = MesaRepositorio(db).ativar_mesa(int(req.mesaId), req.codigoConfirmacao)
-    return MesaAtivacaoResponse(
-        token=mesa.token,
-        expiraEm=mesa.expira_em,
-        mesaId=mesa.id,
-        mesaNome=mesa.nome,
-        uuid=mesa.uuid
-    )
-
-
-@router.get("/uuid/{mesa_uuid}", response_model=MesaListResponse)
-def obter_mesa_por_uuid(
-    mesa_uuid: str,
-    db: Session = Depends(get_db)
-):
-    repo = MesaRepositorio(db)
-    mesa = repo.get_mesa_por_uuid(mesa_uuid)
-    if not mesa:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "Mesa não encontrada")
-
-    agora = datetime.utcnow()
-    status_str = "disponível"
-    if mesa.token:
-        if mesa.expira_em and mesa.expira_em < agora:
-            status_str = "expirada"
-        else:
-            status_str = "em uso"
-
-    return MesaListResponse(
-        id=mesa.id,
-        uuid=mesa.uuid,
-        nome=mesa.nome,
-        status=status_str
-    )
-
-
-@router.post("/uuid/{mesa_uuid}/ativar", response_model=MesaAtivacaoResponse)
-def ativar_mesa_por_uuid(
-    mesa_uuid: str,
-    db: Session = Depends(get_db)
-):
-    repo = MesaRepositorio(db)
-    mesa = repo.ativar_por_uuid(mesa_uuid)
-    if not mesa:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "Mesa não encontrada")
-    return MesaAtivacaoResponse(
-        token=mesa.token,
-        expiraEm=mesa.expira_em,
-        mesaId=mesa.id,
-        mesaNome=mesa.nome,
-        uuid=mesa.uuid
-    )
-
-
-@router.get("/uuid/{mesa_uuid}/validar", response_model=MesaAtivacaoResponse)
-def validar_mesa_por_uuid(
-    mesa_uuid: str,
-    db: Session = Depends(get_db)
-):
-    """
-    Retorna status atual da mesa (se tem token e se está expirado).
-    Útil pro front decidir se precisa reativar.
-    """
-    repo = MesaRepositorio(db)
-    mesa = repo.get_mesa_por_uuid(mesa_uuid)
-    if not mesa:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "Mesa não encontrada")
-
-    if mesa.token and mesa.expira_em and mesa.expira_em > datetime.utcnow():
-        # sessão válida
-        return MesaAtivacaoResponse(
-            token=mesa.token,
-            expiraEm=mesa.expira_em,
-            mesaId=mesa.id,
-            mesaNome=mesa.nome,
-            uuid=mesa.uuid
+    # precisa ter pedidos ATIVOS
+    ativos = (
+        db.query(ModelPedido)
+        .filter(
+            ModelPedido.mesa_id == mesa_id,
+            ModelPedido.status_id != 4   # 4 = concluído/fechado
         )
-    else:
-        # sessão inválida/expirada — retorna 401 para o front saber que precisa ativar
-        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Sessão expirada ou inexistente")
-
-
-# ---------- ROTAS (MESA / CLIENTE) ----------
-
-@router.get("/validar", response_model=MesaValidacaoResponse)
-def validar_mesa_endpoint(
-    mesa_token: str = Depends(require_mesa_token),
-    db: Session = Depends(get_db)
-):
-    mesa = MesaRepositorio(db).validar_token(mesa_token)
-    return MesaValidacaoResponse(
-        valido=True,
-        expiraEm=mesa.expira_em,
-        mesaId=str(mesa.id)
+        .count()
     )
+    if ativos == 0:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="Mesa não possui pedidos abertos")
 
-
-@router.get(
-    "/{mesa_id}/status",
-    response_model=MesaValidacaoResponse,
-    status_code=status.HTTP_200_OK
-)
-def status_mesa_endpoint(
-    mesa_id: int = Path(...),
-    mesa_token: str = Depends(require_mesa_token),
-    db: Session = Depends(get_db)
-):
-    mesa = MesaRepositorio(db).validar_token(mesa_token)
-    if mesa.id != mesa_id:
-        raise HTTPException(
-            status.HTTP_401_UNAUTHORIZED,
-            "Token não corresponde à mesa informada"
-        )
-    return MesaValidacaoResponse(
-        valido=True,
-        expiraEm=mesa.expira_em,
-        mesaId=str(mesa.id)
-    )
-
-
-@router.post(
-    "/{mesa_id}/refresh",
-    response_model=MesaAtivacaoResponse
-)
-def refresh_mesa_endpoint(
-    mesa_id: int = Path(...),
-    mesa_token: str = Depends(require_mesa_token),
-    db: Session = Depends(get_db)
-):
-    repo = MesaRepositorio(db)
-    mesa = repo.get_mesa_por_token(mesa_token)
-    if mesa.id != mesa_id:
-        raise HTTPException(
-            status.HTTP_401_UNAUTHORIZED,
-            "Token não corresponde à mesa informada"
-        )
-    mesa = repo.refresh_mesa(mesa.token)
-    return MesaAtivacaoResponse(
-        token=mesa.token,
-        expiraEm=mesa.expira_em,
-        mesaId=mesa.id,
-        mesaNome=mesa.nome,
-        uuid=mesa.uuid
-    )
-
-
-@router.get(
-    "/{mesa_id}/pedidos",
-    status_code=status.HTTP_200_OK
-)
-def listar_pedidos_da_mesa(
-    mesa_id: int = Path(...),
-    status_filter: str = Query(
-        "todos",
-        regex="^(todos|confirmado|preparando|entregue)$"
-    ),
-    desde: Optional[datetime] = Query(None),
-    mesa_token: str = Depends(require_mesa_token),
-    db: Session = Depends(get_db),
-):
-    mesa = MesaRepositorio(db).validar_token(mesa_token)
-    if mesa.id != mesa_id:
-        raise HTTPException(
-            status.HTTP_401_UNAUTHORIZED,
-            "Token não corresponde à mesa informada"
-        )
+    metodo = req.metodo_pagamento
 
     repo_ped = RepositorioPedido(db)
-    status_arg = None if status_filter == "todos" else status_filter
-    pedidos = repo_ped.listar_por_mesa(mesa_id, status_arg, desde)
+    pedidos, total = repo_ped.fechar_conta(mesa_id, metodo)   # agora soma só “abertos”
+
+    mrepo = MesaRepositorio(db)
+    m = mrepo.limpar_sessao_voltar_disponivel(mesa_id)
 
     return {
-        "pedidos": [
-            PedidoResponse(
-                pedidoId=p.id,
-                timestamp=p.timestamp,
-                status=p.status,
-                observacoesGerais=p.observacoes_gerais,
-                itens=[{
-                    "produtoId": item.produto_id,
-                    "nome": item.produto.nome,
-                    "quantidade": item.quantidade,
-                    "precoUnitario": item.preco_unitario,
-                    "observacoes": item.observacoes,
-                    "subtotal": item.subtotal,
-                } for item in p.itens],
-                valorTotal=p.valor_total,
-                estimativaEntrega=p.estimativa_entrega
-            )
-            for p in pedidos
-        ]
+        "success": True,
+        "fechamento": {
+            "mesa_id": mesa_id,
+            "valor_total": float(total or 0.0),
+            "metodo_pagamento": metodo,
+            "fechado_em": _iso8601(datetime.now(timezone.utc)),
+        },
+        "mesa": {"status": "disponivel", "status_id": 1}
     }

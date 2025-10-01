@@ -12,6 +12,7 @@ from src.routers.rotas_produtos import router as produtos_router
 from src.routers.rotas_pedidos import router as pedidos_router
 from src.routers.rotas_auth import router as auth_router
 from src.routers.rotas_admin import router as admin_router
+from src.routers.rotas_chamados import router as chamados_router
 
 # from src.routers.rotas_chamados import router as chamados_router  # opcional
 
@@ -43,6 +44,7 @@ def on_startup():
     import src.infra.sqlalchemy.models.produto  # noqa: F401
     import src.infra.sqlalchemy.models.pedido  # noqa: F401
     import src.infra.sqlalchemy.models.chamado_garcom  # noqa: F401
+    import src.infra.sqlalchemy.models.chamado_garcom 
     Base.metadata.create_all(bind=engine)
 
 @app.get("/health", tags=["health"])
@@ -56,7 +58,7 @@ app.include_router(produtos_router)
 app.include_router(pedidos_router)
 app.include_router(auth_router)
 app.include_router(admin_router)
-# app.include_router(chamados_router, prefix="/chamados", tags=["chamados"])
+app.include_router(chamados_router)
 
 # permite rodar com "python server.py"
 if __name__ == "__main__":

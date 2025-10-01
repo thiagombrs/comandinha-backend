@@ -1,4 +1,4 @@
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 from typing import Optional
 from datetime import datetime
 
@@ -9,6 +9,8 @@ class MesaCriacaoResponse(BaseModel):
     id: int
     uuid: str
     nome: str
+    status: str | None = None
+    status_id: int | None = None
     
     class Config:
         from_attributes = True
@@ -29,14 +31,16 @@ class MesaAtivacaoResponse(BaseModel):
 
 class MesaValidacaoResponse(BaseModel):
     valido: bool
-    expiraEm: datetime
+    expiraEm: Optional[datetime] = None
     mesaId: str
 
     class Config:
         from_attributes = True
 
 class MesaFechamentoRequest(BaseModel):
-    formaPagamento: str
+    metodo_pagamento: Optional[str] = Field(default=None, alias="metodo_pagamento")
+    model_config = ConfigDict(populate_by_name=True, extra="ignore")
+
 
 class MesaFechamentoResponse(BaseModel):
     mesaId: str
@@ -51,6 +55,7 @@ class MesaListResponse(BaseModel):
     uuid: str
     nome: str
     status: str
+    status_id: int
 
     class Config:
         from_attributes = True

@@ -1,4 +1,4 @@
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict
 from datetime import datetime
 from typing import List, Optional
 from src.schemas.produto import Adicional
@@ -12,7 +12,8 @@ class ItemPedidoCreate(BaseModel):
         populate_by_name = True
 
 class PedidoCreate(BaseModel):
-    mesaId: int = Field(..., alias="mesaId")
+    # agora é SÓ uuid
+    uuid: str = Field(..., alias="uuid")
     itens: List[ItemPedidoCreate]
     observacoesGerais: Optional[str] = Field(None, alias="observacoesGerais")
 
@@ -77,3 +78,13 @@ class PedidoProducaoResponse(BaseModel):
 
     class Config:
         populate_by_name = True
+
+class PedidoStatusPatchRequest(BaseModel):
+    status_id: int = Field(..., ge=1, le=4)
+    model_config = ConfigDict(extra="ignore")
+
+class PedidoStatusPatchResponse(BaseModel):
+    status: str
+    status_id: int
+    # pydantic v2:
+    model_config = ConfigDict(from_attributes=True)
