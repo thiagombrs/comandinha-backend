@@ -1,12 +1,29 @@
-FROM bitnami/python:3.11
+# Base estável e leve
+FROM python:3.11-slim
+
+# Configs básicas
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1 \
+    APP_MODULE=${APP_MODULE:-server:app} \
+    PORT=${PORT:-8000}
+
 WORKDIR /app
 
+# Dependências de build (mínimas; adicione mais se precisar)
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+ && rm -rf /var/lib/apt/lists/*
+
+# Instala as libs Python
+COPY requirements.txt /app/requirements.txt
+RUN pip install --upgrade pip && pip install -r /app/requirements.txt
+
+# Copia o projeto
 COPY . /app
 
-RUN pip install --no-cache-dir -r requirements.txt
+# Porta exposta (Render usa $PORT)
+EXPOSE 8000
 
-# expõe a porta 4000 (mesma que vamos usar no CMD)
-EXPOSE 4000
-
-# inicia o uvicorn apontando para server.py no root
-CMD ["uvicorn", "server:app", "--host", "0.0.0.0", "--port", "4000", "--reload", "--reload-dir", "src"]
+# Sobe o app (ajuste APP_MODULE se seu app não for server:app)
+CMD uvicorn "$APP_MODULE" --host 0.0.0.0 --port "$PORT"
