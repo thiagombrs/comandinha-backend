@@ -139,14 +139,14 @@ def obter_mesa_admin(
         raise HTTPException(status_code=404, detail="Mesa não encontrada")
     status_str, status_id = _status_from_mesa(m)
     return {
-        "id": m.id,
-        "uuid": m.uuid,
-        "nome": m.nome,
-        "status": status_str,
-        "status_id": status_id,
-        "created_at": getattr(m, "created_at", None),
-        "updated_at": getattr(m, "updated_at", None),
-    }
+    "id": m.id,
+    "uuid": m.uuid,
+    "nome": m.nome,
+    "status": status_str,
+    "status_id": status_id,
+    "created_at": _iso8601(getattr(m, "created_at", None)),
+    "updated_at": _iso8601(getattr(m, "updated_at", None)),
+}
 
 @router.get("/{mesa_id}/status", status_code=status.HTTP_200_OK)
 def status_mesa_admin(
@@ -165,28 +165,63 @@ def status_mesa_admin(
         "tem_pedidos": _tem_pedidos(db, m.id),
     }
 
-@router.get("/{mesa_id}/pedidos")
-def listar_pedidos_da_mesa_admin(
-    mesa_id: int,
-    status: str | None = Query(
-        default=None,
-        description="Lista separada por vírgula com status (ids ou textos). Ex: 1,2 ou pendente,preparo"
-    ),
-    desde: datetime | None = Query(
-        default=None,
-        description="Filtra a partir desta data/hora (ISO 8601). Ex: 2025-09-13T00:00:00"
-    ),
+@router.get("/{mesa_id}/pedidos", status_code=200)
+def listar_pedidos_da_mesa(
+    mesa_id: int = Path(...),
+    # opcional: você pode aceitar ?status=1&status=2 ou ?status=pendente&status=entregue
+    status: Optional[List[str]] = Query(None, description="IDs (1..4) ou textos ('pendente','em preparo','entregue','concluido')"),
     db: Session = Depends(get_db),
 ):
-    repo_ped = RepositorioPedido(db)
+    repo = RepositorioPedido(db)
+    pedidos = repo.listar_por_mesa(mesa_id=mesa_id, status=status)
 
-    # Não filtra por status por padrão
-    status_list = None
-    if status:
-        status_list = [s.strip() for s in status.split(",") if s.strip()]
+    # Garante acesso aos relacionamentos já carregados (eager) e monta a resposta rica
+    resposta = []
+    for p in pedidos:
+        # itens no mesmo shape de /pedidos/producao
+        itens = []
+        for it in p.itens:
+            prod = it.produto
+            itens.append({
+                "produtoNome": getattr(prod, "nome", None),
+                "produtoDescricao": getattr(prod, "descricao", None),
+                "produtoAdicionais": getattr(prod, "adicionais", None),
+                "quantidade": it.quantidade,
+                "observacoes": it.observacoes,
+            })
 
-    pedidos = repo_ped.listar_por_mesa(mesa_id, status_list, desde)
-    return pedidos
+        resposta.append({
+            "pedidoId": p.id,
+            "mesaId": p.mesa_id,
+            "timestamp": p.timestamp,
+            "status": p.status,
+            "observacoesGerais": p.observacoes_gerais,
+            "estimativaEntrega": p.estimativa_entrega,
+            "valorTotal": p.valor_total,
+            "statusId": p.status_id,
+            "itens": itens,
+        })
+
+
+    return [{
+        "pedidoId": p.id,
+        "mesaId": p.mesa_id,
+        "timestamp": p.timestamp,
+        "status": p.status,
+        "observacoesGerais": p.observacoes_gerais,
+        "estimativaEntrega": p.estimativa_entrega,
+        "valorTotal": p.valor_total,
+        "statusId": p.status_id,
+        "itens": [{
+            "produtoNome": it.produto.nome if it.produto else None,
+            "produtoDescricao": it.produto.descricao if it.produto else None,
+            "produtoAdicionais": it.produto.adicionais if it.produto else None,
+            "quantidade": it.quantidade,
+            "observacoes": it.observacoes,
+        } for it in p.itens]
+    } for p in pedidos]
+
+
 
 @router.post("/{mesa_id}/status", status_code=status.HTTP_200_OK)
 def alterar_status_mesa_admin(

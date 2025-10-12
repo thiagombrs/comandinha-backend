@@ -6,8 +6,7 @@ from sqlalchemy import Column, Integer, String, Boolean, DateTime
 from sqlalchemy.orm import relationship
 from src.infra.sqlalchemy.config.database import Base
 
-def utcnow():
-    return datetime.now(timezone.utc)
+from src.common.tz import now_sp 
 
 class Mesa(Base):
     __tablename__ = 'mesa'
@@ -18,8 +17,9 @@ class Mesa(Base):
     ativo      = Column(Boolean, default=False)
     status_id  = Column(Integer, nullable=False, default=1)  # <— renomeada
 
-    created_at = Column(DateTime(timezone=True), nullable=False, default=utcnow)
-    updated_at = Column(DateTime(timezone=True), nullable=False, default=utcnow, onupdate=utcnow)
+    # grava em America/Sao_Paulo (aware, com offset)
+    created_at = Column(DateTime(timezone=True), nullable=False, default=now_sp)
+    updated_at = Column(DateTime(timezone=True), nullable=False, default=now_sp, onupdate=now_sp)
 
     pedidos   = relationship("Pedido", back_populates="mesa")
     chamados  = relationship("ChamadoGarcom", back_populates="mesa", cascade="all, delete-orphan")

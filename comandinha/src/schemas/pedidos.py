@@ -88,3 +88,16 @@ class PedidoStatusPatchResponse(BaseModel):
     status_id: int
     # pydantic v2:
     model_config = ConfigDict(from_attributes=True)
+
+class PedidoMesaResponse(BaseModel):
+    pedidoId: int = Field(..., alias="pedidoId")
+    mesaId: int = Field(..., alias="mesaId")
+    timestamp: datetime
+    status: str
+    observacoesGerais: Optional[str]
+    estimativaEntrega: datetime = Field(..., alias="estimativaEntrega")
+    valorTotal: float = Field(..., alias="valorTotal")
+    statusId: int = Field(..., alias="statusId")
+    itens: List[ItemProducaoResponse]
+    class Config:
+        populate_by_name = True

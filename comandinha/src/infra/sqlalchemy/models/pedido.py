@@ -1,8 +1,11 @@
 # src/infra/sqlalchemy/models/pedido.py
+from datetime import datetime
 from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, Float, CheckConstraint
 from sqlalchemy.orm import relationship, validates
-from datetime import datetime
+from datetime import datetime, timezone
 from src.infra.sqlalchemy.config.database import Base
+
+from src.common.tz import now_sp, TZ
 
 STATUS_TEXT_TO_ID = {
     "pendente": 1,
@@ -21,9 +24,10 @@ class Pedido(Base):
     id = Column(Integer, primary_key=True)
     mesa_id = Column(Integer, ForeignKey("mesa.id"), nullable=False)
 
-    timestamp = Column(DateTime, default=datetime.utcnow, nullable=False)
-    atualizado_em = Column(DateTime, nullable=True)
-    estimativa_entrega = Column(DateTime, nullable=True)
+    timestamp = Column(DateTime(timezone=True), default=now_sp, nullable=False)
+    atualizado_em = Column(DateTime(timezone=True), nullable=True)
+    estimativa_entrega = Column(DateTime(timezone=True), nullable=True)
+
 
     status_id = Column(Integer, nullable=False, default=1)
     status = Column(String, nullable=False, default="pendente")

@@ -1,7 +1,11 @@
 from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, Index
 from sqlalchemy.orm import relationship
-from datetime import datetime
+from datetime import datetime, timezone
+from zoneinfo import ZoneInfo
 from src.infra.sqlalchemy.config.database import Base
+from src.common.tz import now_sp, TZ
+
+TZ = ZoneInfo("America/Sao_Paulo")
 
 # Códigos:
 # Motivo: 1=assistencia, 2=fechar_conta, 3=urgente
@@ -16,10 +20,11 @@ class ChamadoGarcom(Base):
     motivo = Column(Integer, nullable=False)                           # <-- agora INTEGER
     detalhes = Column(String, nullable=True)
 
-    status = Column(Integer, nullable=False, default=1)                # <-- agora INTEGER (1=pendente)
-    criado_em = Column(DateTime, nullable=False, default=lambda: datetime.now())
-    atendido_em = Column(DateTime, nullable=True)
-    cancelado_em = Column(DateTime, nullable=True)
+    status = Column(Integer, nullable=False, default=1)
+    criado_em = Column(DateTime(timezone=True), nullable=False, default=now_sp)
+    atendido_em = Column(DateTime(timezone=True), nullable=True)
+    cancelado_em = Column(DateTime(timezone=True), nullable=True)
+
 
     atendido_por = Column(String(64), nullable=True)                   # id/uuid do admin (sem FK por ora)
     mesa = relationship("Mesa", lazy="joined")

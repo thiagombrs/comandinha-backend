@@ -1,7 +1,7 @@
 # src/infra/sqlalchemy/repositorios/repositorio_chamado.py
 from __future__ import annotations
 
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Optional, List, Dict, Union
 
 from sqlalchemy.orm import Session
@@ -31,8 +31,11 @@ PAIR_COOLDOWN = {MOTIVO_ASSISTENCIA, MOTIVO_URGENTE}
 
 COOLDOWN = timedelta(minutes=3)
 
-def _now() -> datetime:
-    return datetime.now()  # naive, compatível com SQLite
+from src.common.tz import now_sp, TZ
+
+def _now():
+    return now_sp()
+
 
 def _status_txt(code: int) -> str:
     return STATUS_CODE_TO_TEXT.get(code, "pendente")

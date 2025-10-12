@@ -1,4 +1,5 @@
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
+
 from typing import Optional, List
 
 from typing import Optional, List, Union, Iterable
@@ -21,6 +22,8 @@ from src.infra.sqlalchemy.models import (
 )
 from src.schemas.pedidos import PedidoCreate
 
+from src.common.tz import now_sp, TZ
+
 class RepositorioPedido:
     def __init__(self, db: Session):
         self.db = db
@@ -33,16 +36,20 @@ class RepositorioPedido:
             raise HTTPException(status_code=400, detail="status_id inválido (use 1..4)")
 
         p.status_id = status_id            # sincroniza 'status' via @validates
-        p.atualizado_em = datetime.utcnow()
+        p.atualizado_em = datetime.now(timezone.utc)
+
         self.db.add(p)
         self.db.commit()
         self.db.refresh(p)
         return p
     
     def criar_pedido(self, mesa_id: int, dados: PedidoCreate):
-        from datetime import datetime, timedelta
-        agora = datetime.utcnow()
+        from datetime import datetime, timedelta, timezone
+
+        agora = now_sp()
+        Pedido.atualizado_em = now_sp()
         estimativa = agora + timedelta(minutes=15)
+
 
         cabecalho = model_pedido.Pedido(
             mesa_id=mesa_id,
@@ -131,11 +138,13 @@ class RepositorioPedido:
         status: Optional[Iterable[Union[str, int]]] = None,
         desde: Optional[datetime] = None,
     ) -> List[Pedido]:
-        """
-        Lista pedidos de uma mesa. Se 'status' for fornecido, aceita IDs (1..4) e/ou
-        textos ('pendente','preparo','entregue','concluido'). Se não vier, não filtra por status.
-        """
-        q = self.db.query(Pedido).filter(Pedido.mesa_id == mesa_id)
+        q = (
+            self.db.query(Pedido)
+            .filter(Pedido.mesa_id == mesa_id)
+            .options(
+                selectinload(Pedido.itens).selectinload(ItemPedido.produto)
+            )
+        )
 
         if status:
             status_ids: List[int] = []
@@ -148,11 +157,9 @@ class RepositorioPedido:
                 elif isinstance(s, str):
                     status_texts.append(s.strip().lower())
 
-            # Aplica os dois filtros com OR (qualquer um que bater)
             if status_ids and status_texts:
                 q = q.filter(
-                    (Pedido.status_id.in_(status_ids))
-                    | (Pedido.status.in_(status_texts))
+                    (Pedido.status_id.in_(status_ids)) | (Pedido.status.in_(status_texts))
                 )
             elif status_ids:
                 q = q.filter(Pedido.status_id.in_(status_ids))
@@ -196,7 +203,8 @@ class RepositorioPedido:
         total = sum(float(p.valor_total or 0.0) for p in pedidos_abertos)
 
         # marca todos como concluído (4)
-        agora = datetime.utcnow()
+        agora = datetime.now(timezone.utc)
+
         for p in pedidos_abertos:
             p.status_id = 4
             p.atualizado_em = agora
@@ -216,7 +224,8 @@ class RepositorioPedido:
         if not pedido:
             return None
         pedido.status = status
-        pedido.atualizado_em = datetime.utcnow()
+        pedido.atualizado_em = datetime.now(timezone.utc)
+
         self.db.add(pedido)
         self.db.commit()
         self.db.refresh(pedido)

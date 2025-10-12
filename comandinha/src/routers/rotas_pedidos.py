@@ -23,23 +23,50 @@ router = APIRouter(
     tags=["pedidos"]
 )
 
-@router.get("", status_code=200)
+@router.get(
+    "",
+    response_model=List[PedidoProducaoResponse],
+    status_code=status.HTTP_200_OK
+)
 def listar_pedidos_nao_concluidos(
     _: Restaurante = Depends(get_current_admin),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
 ):
+    """
+    Lista todos os pedidos ainda não concluídos (admin),
+    incluindo itens no mesmo formato de /pedidos/producao.
+    """
     repo = RepositorioPedido(db)
     pedidos = repo.listar_nao_concluidos()
-    return [{
-        "id": p.id,
-        "mesa_id": p.mesa_id,
-        "status": p.status,
-        "status_id": p.status_id,
-        "valor_total": p.valor_total,
-        "estimativa_entrega": p.estimativa_entrega,
-        "atualizado_em": p.atualizado_em,
-        "timestamp": p.timestamp,
-    } for p in pedidos]
+
+    resposta: List[PedidoProducaoResponse] = []
+    for p in pedidos:
+        # Força carregamento das relações para evitar lazy-load fora da sessão
+        db.refresh(p)
+        _ = p.mesa.nome  # mesa
+        for item in p.itens:
+            _ = item.produto.nome  # produto
+
+        resposta.append(PedidoProducaoResponse(
+            pedidoId=p.id,
+            mesaId=p.mesa.id,
+            mesaNome=p.mesa.nome,
+            timestamp=p.timestamp,
+            status=p.status,
+            observacoesGerais=p.observacoes_gerais,
+            estimativaEntrega=p.estimativa_entrega,
+            itens=[
+                ItemProducaoResponse(
+                    produtoNome=item.produto.nome,
+                    produtoDescricao=item.produto.descricao,
+                    produtoAdicionais=item.produto.adicionais,
+                    quantidade=item.quantidade,
+                    observacoes=item.observacoes,
+                )
+                for item in p.itens
+            ],
+        ))
+    return resposta
 
 @router.post(
     "",
