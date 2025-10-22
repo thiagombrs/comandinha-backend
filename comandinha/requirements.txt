@@ -3,7 +3,7 @@ anyio==3.7.1
 asn1crypto==1.5.1
 blinker==1.6.2
 tzdata>=2024.1
-psycopg[binary]==3.2.3
+psycopg2-binary==2.9.9
 
 
 # FastAPI + pydantic v2
@@ -25,7 +25,6 @@ idna==3.4
 # DB
 SQLAlchemy==1.4.41
 sqlalchemy2-stubs==0.0.2a35
-psycopg2-binary==2.9.7
 ulid==1.1
 
 # Utilitários

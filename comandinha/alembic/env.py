@@ -36,7 +36,12 @@ target_metadata = Base.metadata
 def _apply_env_url():
     url_env = os.getenv("DATABASE_URL")
     if url_env:
-        config.set_main_option("sqlalchemy.url", url_env)
+        # Normaliza 'postgres://' e 'postgresql://' para psycopg2
+        if url_env.startswith("postgres://"):
+            url_env = url_env.replace("postgres://", "postgresql+psycopg2://", 1)
+        elif url_env.startswith("postgresql://") and "+psycopg" not in url_env:
+            url_env = url_env.replace("postgresql://", "postgresql+psycopg2://", 1)
+        context.config.set_main_option("sqlalchemy.url", url_env)
 
 def run_migrations_offline() -> None:
     _apply_env_url()
