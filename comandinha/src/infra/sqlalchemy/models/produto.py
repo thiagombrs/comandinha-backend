@@ -20,7 +20,7 @@ class Produto(Base):
     adicionais = Column(JSON, nullable=True)    # ex: [{"id":"a1","nome":"Queijo","preco":5.0}]
 
     # NOVO
-    disponivel = Column(Boolean, nullable=False, server_default=text("1"), default=True)
+    disponivel = Column(Boolean, nullable=False, server_default=text('true'))
 
     # campos novos
     restricoes = Column(JSON, nullable=True)

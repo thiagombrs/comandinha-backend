@@ -1,27 +1,22 @@
+# src/infra/sqlalchemy/config/database.py
+import os
 from sqlalchemy import create_engine
-from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import sessionmaker
+from sqlalchemy.orm import sessionmaker, declarative_base
 
-# URL de conexão com o SQLite para o arquivo de banco de dados
-SQLALCHEMY_DATABASE_URL = "sqlite:///./app_comandinha.db"
+# Se DATABASE_URL não existir, mantemos SQLite local (dev)
+DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./app_comandinha.db")
 
-# Criação do engine SQLAlchemy, permitindo múltiplas threads
-engine = create_engine(
-    SQLALCHEMY_DATABASE_URL,
-    connect_args={"check_same_thread": False}
-)
+engine_kwargs = {"pool_pre_ping": True}  # evita conexões zumbis
 
-# Configuração da SessionLocal para injeção de dependência
-SessionLocal = sessionmaker(
-    autocommit=False,
-    autoflush=False,
-    bind=engine
-)
+# Argumento específico do SQLite
+if DATABASE_URL.startswith("sqlite"):
+    engine_kwargs["connect_args"] = {"check_same_thread": False}
 
-# Classe base para todas as models declarativas
+engine = create_engine(DATABASE_URL, **engine_kwargs)
+
+SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
 
-# Dependência para obter sessão do DB em endpoints FastAPI
 def get_db():
     db = SessionLocal()
     try:

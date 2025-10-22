@@ -26,4 +26,5 @@ COPY . /app
 EXPOSE 8000
 
 # Sobe o app (ajuste APP_MODULE se seu app não for server:app)
-CMD uvicorn "$APP_MODULE" --host 0.0.0.0 --port "$PORT"
+CMD bash -lc "alembic upgrade head && uvicorn server:app --host 0.0.0.0 --port $PORT"
+

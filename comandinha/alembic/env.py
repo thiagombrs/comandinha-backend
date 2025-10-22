@@ -2,6 +2,8 @@ from logging.config import fileConfig
 import sys
 from sqlalchemy import engine_from_config
 from sqlalchemy import pool
+from alembic import context
+import os
 
 # adiciona sua pasta src ao path
 sys.path.append(".")
@@ -31,8 +33,13 @@ target_metadata = Base.metadata
 # my_important_option = config.get_main_option("my_important_option")
 # ... etc.
 
+def _apply_env_url():
+    url_env = os.getenv("DATABASE_URL")
+    if url_env:
+        config.set_main_option("sqlalchemy.url", url_env)
 
 def run_migrations_offline() -> None:
+    _apply_env_url()
     """Run migrations in 'offline' mode.
 
     This configures the context with just a URL
@@ -57,23 +64,13 @@ def run_migrations_offline() -> None:
 
 
 def run_migrations_online() -> None:
-    """Run migrations in 'online' mode.
-
-    In this scenario we need to create an Engine
-    and associate a connection with the context.
-
-    """
+    _apply_env_url()  # <<< GARANTA ESTA LINHA
     connectable = engine_from_config(
         config.get_section(config.config_ini_section, {}),
-        prefix="sqlalchemy.",
-        poolclass=pool.NullPool,
+        prefix="sqlalchemy.", poolclass=pool.NullPool,
     )
-
     with connectable.connect() as connection:
-        context.configure(
-            connection=connection, target_metadata=target_metadata
-        )
-
+        context.configure(connection=connection, target_metadata=target_metadata)
         with context.begin_transaction():
             context.run_migrations()
 

@@ -1,4 +1,5 @@
 import uvicorn
+import os
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -38,14 +39,18 @@ app.add_middleware(
 
 @app.on_event("startup")
 def on_startup():
-    # registra todos os modelos para criar tabelas
+    # registra os modelos (como já está)
     import src.infra.sqlalchemy.models.mesa  # noqa: F401
     import src.infra.sqlalchemy.models.categoria  # noqa: F401
     import src.infra.sqlalchemy.models.produto  # noqa: F401
     import src.infra.sqlalchemy.models.pedido  # noqa: F401
     import src.infra.sqlalchemy.models.chamado_garcom  # noqa: F401
-    import src.infra.sqlalchemy.models.chamado_garcom 
-    Base.metadata.create_all(bind=engine)
+
+    # Somente em desenvolvimento (ou quando explicitamente habilitado),
+    # criamos as tabelas automaticamente. Em produção, use Alembic.
+    if os.getenv("RUN_DDL_ON_STARTUP") == "1":
+        from src.infra.sqlalchemy.config.database import engine, Base
+        Base.metadata.create_all(bind=engine)
 
 @app.get("/health", tags=["health"])
 def health_check():
