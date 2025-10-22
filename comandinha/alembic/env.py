@@ -36,10 +36,12 @@ target_metadata = Base.metadata
 def _apply_env_url():
     url_env = os.getenv("DATABASE_URL")
     if url_env:
-        # Normaliza 'postgres://' e 'postgresql://' para psycopg2
+        # Normalização forte para psycopg2
+        import re
+        url_env = re.sub(r"^postgresql\+psycopg(?!2)", "postgresql+psycopg2", url_env)
         if url_env.startswith("postgres://"):
             url_env = url_env.replace("postgres://", "postgresql+psycopg2://", 1)
-        elif url_env.startswith("postgresql://") and "+psycopg" not in url_env:
+        if url_env.startswith("postgresql://") and "+psycopg" not in url_env and "+pg8000" not in url_env:
             url_env = url_env.replace("postgresql://", "postgresql+psycopg2://", 1)
         context.config.set_main_option("sqlalchemy.url", url_env)
 
